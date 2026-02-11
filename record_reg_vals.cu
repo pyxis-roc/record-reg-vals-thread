@@ -148,7 +148,11 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                     for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
                         reg_num_list.push_back(op->u.reg.num + reg_idx);
                     }
-                }
+                } else if (op->type == InstrType::OperandType::UREG) {
+		  for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
+                        ureg_num_list.push_back(op->u.reg.num + reg_idx);
+                    }
+		}
             }
             /* insert call to the instrumentation function with its
              * arguments */
@@ -165,10 +169,16 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                                            (uint64_t)&channel_dev);
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
+            nvbit_add_call_arg_const_val32(instr, ureg_num_list.size());
             for (int num : reg_num_list) {
                 /* last parameter tells it is a variadic parameter passed to
                  * the instrument function record_reg_val() */
                 nvbit_add_call_arg_reg_val(instr, num, true);
+            }
+            for (int num : ureg_num_list) {
+                /* last parameter tells it is a variadic parameter passed to
+                 * the instrument function record_reg_val() */
+                nvbit_add_call_arg_ureg_val(instr, num, true);
             }
             cnt++;
         }
@@ -306,6 +316,10 @@ void *recv_thread_fun(void *) {
                     }
                     printf("\n");
                 }
+
+                for (int reg_idx = 0; reg_idx < ri->unum_regs; reg_idx++) {
+		    printf("* UReg%d: 0x%08x\n", reg_idx, ri->ureg_vals[reg_idx]);
+		}
 
                 printf("\n");
                 num_processed_bytes += sizeof(reg_info_t);

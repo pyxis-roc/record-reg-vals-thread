@@ -45,7 +45,8 @@
 extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opcode_id,
                                                               int opcode_idx,
                                                               uint64_t pchannel_dev,
-                                                              int32_t num_regs...) {
+                                                              int32_t num_regs,
+							      int32_t unum_regs...) {
     if (!pred) {
         return;
     }
@@ -68,10 +69,11 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
     ri.opcode_idx = opcode_idx;
     ri.opcode_id = opcode_id;
     ri.num_regs = num_regs;
+    ri.unum_regs = unum_regs;
 
-    if (num_regs) {
+    if (num_regs || unum_regs) {
         va_list vl;
-        va_start(vl, num_regs);
+        va_start(vl, unum_regs);
 
         for (int i = 0; i < num_regs; i++) {
             uint32_t val = va_arg(vl, uint32_t);
@@ -81,6 +83,15 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
               ri.reg_vals[tid][i] = __shfl_sync(active_mask, val, tid);
             }
         }
+
+	if(first_laneid == laneid) {
+	  for (int i = 0; i < unum_regs; i++) {
+            uint32_t val = va_arg(vl, uint32_t);
+
+	    ri.ureg_vals[i] = val;
+	  }
+	}
+
         va_end(vl);
     }
 
