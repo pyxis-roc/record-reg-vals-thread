@@ -45,6 +45,7 @@
 extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opcode_id,
                                                               int opcode_idx,
                                                               uint64_t pchannel_dev,
+							      int32_t constant,
                                                               int32_t num_regs,
 							      int32_t unum_regs...) {
     if (!pred) {
@@ -70,8 +71,9 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
     ri.opcode_id = opcode_id;
     ri.num_regs = num_regs;
     ri.unum_regs = unum_regs;
+    ri.constant = constant;
 
-    if (num_regs || unum_regs) {
+    if (num_regs || unum_regs || (constant != 0)) {
         va_list vl;
         va_start(vl, unum_regs);
 
@@ -89,6 +91,12 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
             uint32_t val = va_arg(vl, uint32_t);
 
 	    ri.ureg_vals[i] = val;
+	  }
+
+	  if(constant == 1) {
+	    ri.c.constant32 = va_arg(vl, uint32_t);
+	  } else if (constant == 2) {
+	    ri.c.constant64 = va_arg(vl, uint64_t);
 	  }
 	}
 

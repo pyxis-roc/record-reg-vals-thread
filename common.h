@@ -40,9 +40,14 @@ typedef struct {
     int32_t warp_id;
     int32_t opcode_id;
     int32_t opcode_idx;
+    int32_t constant;  // 0: no constant, 1: 32-bit, 2: 64-bit
     int32_t num_regs;
     int32_t unum_regs;
     /* 32 lanes, each thread can store up to 5 register values */
     uint32_t reg_vals[32][8];
     uint32_t ureg_vals[5];
+    union {
+      uint32_t constant32;
+      uint64_t constant64;
+    } c;
 } reg_info_t;

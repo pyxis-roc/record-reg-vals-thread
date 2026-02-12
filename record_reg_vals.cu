@@ -140,6 +140,9 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             int opcode_id = sass_to_id_map[instr->getSass()];
             std::vector<int> reg_num_list;
             std::vector<int> ureg_num_list;
+	    int32_t constant = 0;
+	    int32_t bankid, bankoffset;
+
             /* iterate on the operands */
             for (int i = 0; i < instr->getNumOperands(); i++) {
                 /* get the operand "i" */
@@ -152,6 +155,13 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 		  for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
                         ureg_num_list.push_back(op->u.reg.num + reg_idx);
                     }
+		} else if (op->type == InstrType::OperandType::CBANK) {
+		  if(op->u.cbank.has_imm_offset) {
+		    constant = instr->getSize() / 4;
+		    if(constant > 2) constant = 2;
+		    bankid = op->u.cbank.id;
+		    bankoffset = op->u.cbank.imm_offset;
+		  }
 		}
             }
             /* insert call to the instrumentation function with its
@@ -167,6 +177,7 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             /* add pointer to channel_dev*/
             nvbit_add_call_arg_const_val64(instr,
                                            (uint64_t)&channel_dev);
+	    nvbit_add_call_arg_const_val32(instr, constant);
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
             nvbit_add_call_arg_const_val32(instr, ureg_num_list.size());
@@ -180,6 +191,14 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                  * the instrument function record_reg_val() */
                 nvbit_add_call_arg_ureg_val(instr, num, true);
             }
+	    if(constant) {
+	      if(constant == 1) {
+		nvbit_add_call_arg_cbank_val(instr, bankid, bankoffset, true);
+	      } else if(constant == 2) {
+		nvbit_add_call_arg_cbank_val(instr, bankid, bankoffset, true);
+		nvbit_add_call_arg_cbank_val(instr, bankid, bankoffset+4, true);
+	      }
+	    }
             cnt++;
         }
     }
@@ -266,6 +285,7 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                     p->gridDimZ, p->blockDimX, p->blockDimY, p->blockDimZ, nregs,
                     shmem_static_nbytes + p->sharedMemBytes, (uint64_t)p->hStream);
             }
+	    fflush(stdout);
         } else {
             /* make sure current kernel is completed */
             cudaDeviceSynchronize();
@@ -319,6 +339,14 @@ void *recv_thread_fun(void *) {
 
                 for (int reg_idx = 0; reg_idx < ri->unum_regs; reg_idx++) {
 		    printf("* UReg%d: 0x%08x\n", reg_idx, ri->ureg_vals[reg_idx]);
+		}
+
+		if(ri->constant) {
+		  if(ri->constant == 1) {
+		    printf("* C32: 0x%08x\n", ri->c.constant32);
+		  } else if (ri->constant == 2) {
+		    printf("* C64: 0x%016lx\n", ri->c.constant64);
+		  }
 		}
 
                 printf("\n");
