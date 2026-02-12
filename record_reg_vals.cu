@@ -37,7 +37,8 @@
 #include <map>
 #include <vector>
 #include <unordered_set>
-
+#include <cstring>
+#include <errno.h>
 /* every tool needs to include this once */
 #include "nvbit_tool.h"
 
@@ -77,10 +78,13 @@ bool skip_callback_flag = false;
 uint32_t instr_begin_interval = 0;
 uint32_t instr_end_interval = UINT32_MAX;
 int verbose = 0;
+std::string output_filename;
 
 /* opcode to id map and reverse map  */
 std::map<std::string, int> sass_to_id_map;
 std::map<int, std::string> id_to_sass_map;
+
+FILE *output_file = stdout;
 
 void nvbit_at_init() {
     setenv("CUDA_MANAGED_FORCE_DEVICE_ALLOC", "1", 1);
@@ -91,8 +95,21 @@ void nvbit_at_init() {
         instr_end_interval, "INSTR_END", UINT32_MAX,
         "End of the instruction interval where to apply instrumentation");
     GET_VAR_INT(verbose, "TOOL_VERBOSE", 0, "Enable verbosity inside the tool");
+    GET_VAR_STR(output_filename, "TRACE_FILE", "Output trace to file");
     std::string pad(100, '-');
     printf("%s\n", pad.c_str());
+
+    if (output_filename.size() > 0) {
+      output_file = fopen(output_filename.c_str(), "w");
+      if (output_file == NULL) {
+        fprintf(stderr, "ERROR: Unable to open %s for writing (%s) \n",
+                output_filename.c_str(), strerror(errno));
+      } else {
+	fprintf(stderr, "Writing trace to %s\n", output_filename.c_str());
+      }
+    }
+
+    
 }
 /* Set used to avoid re-instrumenting the same functions multiple times */
 std::unordered_set<CUfunction> already_instrumented;
@@ -266,8 +283,9 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
 
             if (cbid == API_CUDA_cuLaunchKernelEx_ptsz ||
                 cbid == API_CUDA_cuLaunchKernelEx) {
-                cuLaunchKernelEx_params* p = (cuLaunchKernelEx_params*)params;
-                printf(
+              cuLaunchKernelEx_params *p = (cuLaunchKernelEx_params *)params;
+	      if(output_file)
+                fprintf(output_file, 
                     "Kernel %s - grid size %d,%d,%d - block size %d,%d,%d - nregs "
                     "%d - shmem %d - cuda stream id %ld\n",
                     nvbit_get_func_name(ctx, func),
@@ -277,15 +295,15 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                     shmem_static_nbytes + p->config->sharedMemBytes,
                     (uint64_t)p->config->hStream);
             } else {
-                cuLaunchKernel_params* p = (cuLaunchKernel_params*)params;
-                printf(
+              cuLaunchKernel_params *p = (cuLaunchKernel_params *)params;
+              if (output_file)
+		fprintf(output_file,
                     "Kernel %s - grid size %d,%d,%d - block size %d,%d,%d - nregs "
                     "%d - shmem %d - cuda stream id %ld\n",
                     nvbit_get_func_name(ctx, func), p->gridDimX, p->gridDimY,
                     p->gridDimZ, p->blockDimX, p->blockDimY, p->blockDimZ, nregs,
                     shmem_static_nbytes + p->sharedMemBytes, (uint64_t)p->hStream);
             }
-	    fflush(stdout);
         } else {
             /* make sure current kernel is completed */
             cudaDeviceSynchronize();
@@ -308,6 +326,7 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
 
 void *recv_thread_fun(void *) {
     char *recv_buffer = (char *)malloc(CHANNEL_SIZE);
+    char *output = (char *)malloc(1024);
 
     while (recv_thread_done == RecvThreadState::WORKING) {
         uint32_t num_recv_bytes = channel_host.recv(recv_buffer, CHANNEL_SIZE);
@@ -324,37 +343,49 @@ void *recv_thread_fun(void *) {
                     break;
                 }
 
-                printf("CTA %d,%d,%d - warp %d - %d - %s:\n", ri->cta_id_x,
+		if(output_file)
+                fprintf(output_file, "CTA %d,%d,%d - warp %d - %d - %s:\n", ri->cta_id_x,
                        ri->cta_id_y, ri->cta_id_z, ri->warp_id, ri->opcode_idx,
                        id_to_sass_map[ri->opcode_id].c_str());
 
                 for (int reg_idx = 0; reg_idx < ri->num_regs; reg_idx++) {
-                    printf("* ");
+                  char *start = output;
+                  size_t sz = 1024;
+		  int wr = 0;
                     for (int i = 0; i < 32; i++) {
-                        printf("Reg%d_T%d: 0x%08x ", reg_idx, i,
-                               ri->reg_vals[i][reg_idx]);
+                      wr = snprintf(start, sz, "Reg%d_T%d: 0x%08x ", reg_idx, i,
+                                    ri->reg_vals[i][reg_idx]);
+                      if (wr >= sz)
+                        break; // TRUNCATED
+                      sz -= wr;
+		      start += wr;
                     }
-                    printf("\n");
+                    if (output_file)
+                      fprintf(output_file, "* %s\n", output);
                 }
 
                 for (int reg_idx = 0; reg_idx < ri->unum_regs; reg_idx++) {
-		    printf("* UReg%d: 0x%08x\n", reg_idx, ri->ureg_vals[reg_idx]);
+                  if (output_file)
+                    fprintf(output_file,
+                           "* UReg%d: 0x%08x\n", reg_idx, ri->ureg_vals[reg_idx]);
 		}
 
 		if(ri->constant) {
 		  if(ri->constant == 1) {
-		    printf("* C32: 0x%08x\n", ri->c.constant32);
+                    if (output_file)
+                      fprintf(output_file, "* C32: 0x%08x\n", ri->c.constant32);
 		  } else if (ri->constant == 2) {
-		    printf("* C64: 0x%016lx\n", ri->c.constant64);
+                    if (output_file)
+                      fprintf(output_file, "* C64: 0x%016lx\n", ri->c.constant64);
 		  }
 		}
-
-                printf("\n");
+                if(output_file) fprintf(output_file, "\n");
                 num_processed_bytes += sizeof(reg_info_t);
             }
         }
     }
     free(recv_buffer);
+    free(output);
     recv_thread_done = RecvThreadState::FINISHED;
     return NULL;
 }
