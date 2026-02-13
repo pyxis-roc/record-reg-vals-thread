@@ -159,27 +159,34 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             std::vector<int> ureg_num_list;
 	    int32_t constant = 0;
 	    int32_t bankid, bankoffset;
+	    int width =  instr->getSize() / 4;
+	    if (width < 1) width = 1;
+	    if(strncmp("IMAD.WIDE", instr->getOpcode(), 9) == 0)
+	      width = 2;
+	    else if(strncmp("HMMA.16816.F32", instr->getOpcode(), 14) == 0)
+	      width = 4;
 
             /* iterate on the operands */
             for (int i = 0; i < instr->getNumOperands(); i++) {
                 /* get the operand "i" */
                 const InstrType::operand_t *op = instr->getOperand(i);
                 if (op->type == InstrType::OperandType::REG) {
-                    for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
+                    for (int reg_idx = 0; reg_idx < width; reg_idx++) {
                         reg_num_list.push_back(op->u.reg.num + reg_idx);
                     }
                 } else if (op->type == InstrType::OperandType::UREG) {
-		  for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
+		  for (int reg_idx = 0; reg_idx < width; reg_idx++) {
                         ureg_num_list.push_back(op->u.reg.num + reg_idx);
                     }
 		} else if (op->type == InstrType::OperandType::CBANK) {
 		  if(op->u.cbank.has_imm_offset) {
-		    constant = instr->getSize() / 4;
+		    constant = instr->getSize() / 4; // use this instead of width
 		    if(constant > 2) constant = 2;
 		    bankid = op->u.cbank.id;
 		    bankoffset = op->u.cbank.imm_offset;
 		  }
 		}
+		width = 1;
             }
             /* insert call to the instrumentation function with its
              * arguments */
@@ -198,6 +205,7 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
             nvbit_add_call_arg_const_val32(instr, ureg_num_list.size());
+
             for (int num : reg_num_list) {
                 /* last parameter tells it is a variadic parameter passed to
                  * the instrument function record_reg_val() */
