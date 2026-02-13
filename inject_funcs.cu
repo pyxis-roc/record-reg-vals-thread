@@ -73,11 +73,11 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
     ri.unum_regs = unum_regs;
     ri.constant = constant;
 
-    if (num_regs || unum_regs || (constant != 0)) {
+    if ((num_regs & 0xff) || unum_regs || (constant != 0)) {
         va_list vl;
         va_start(vl, unum_regs);
 
-        for (int i = 0; i < num_regs; i++) {
+        for (int i = 0; i < (num_regs & 0xff); i++) {
             uint32_t val = va_arg(vl, uint32_t);
 
             /* collect register values from other threads */

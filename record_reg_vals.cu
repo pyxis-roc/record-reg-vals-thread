@@ -109,7 +109,6 @@ void nvbit_at_init() {
       }
     }
 
-    
 }
 /* Set used to avoid re-instrumenting the same functions multiple times */
 std::unordered_set<CUfunction> already_instrumented;
@@ -160,11 +159,13 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 	    int32_t constant = 0;
 	    int32_t bankid, bankoffset;
 	    int width =  instr->getSize() / 4;
+	    int owidth = 0;
 	    if (width < 1) width = 1;
 	    if(strncmp("IMAD.WIDE", instr->getOpcode(), 9) == 0)
 	      width = 2;
 	    else if(strncmp("HMMA.16816.F32", instr->getOpcode(), 14) == 0)
 	      width = 4;
+	    owidth = width;
 
             /* iterate on the operands */
             for (int i = 0; i < instr->getNumOperands(); i++) {
@@ -203,7 +204,7 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                                            (uint64_t)&channel_dev);
 	    nvbit_add_call_arg_const_val32(instr, constant);
             /* how many register values are passed next */
-            nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
+            nvbit_add_call_arg_const_val32(instr, (owidth << 8) | reg_num_list.size());
             nvbit_add_call_arg_const_val32(instr, ureg_num_list.size());
 
             for (int num : reg_num_list) {
@@ -356,7 +357,8 @@ void *recv_thread_fun(void *) {
                        ri->cta_id_y, ri->cta_id_z, ri->warp_id, ri->opcode_idx,
                        id_to_sass_map[ri->opcode_id].c_str());
 
-                for (int reg_idx = 0; reg_idx < ri->num_regs; reg_idx++) {
+		fprintf(output_file, "* Width: %0d\n", (ri->num_regs >> 8) & 0xff);
+                for (int reg_idx = 0; reg_idx < (ri->num_regs & 0xff); reg_idx++) {
                   char *start = output;
                   size_t sz = 1024;
 		  int wr = 0;
