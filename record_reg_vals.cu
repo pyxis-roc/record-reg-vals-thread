@@ -185,6 +185,8 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 		} else if (op->type == InstrType::OperandType::CBANK) {
 		  if(op->u.cbank.has_imm_offset) {
 		    constant = instr->getSize() / 4; // use this instead of width
+		    if(instr->getSize() < 4)
+		      constant = 1; // LDC.U8
 		    if(constant > 2) constant = 2;
 		    bankid = op->u.cbank.id;
 		    bankoffset = op->u.cbank.imm_offset;
