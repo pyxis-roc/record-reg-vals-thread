@@ -156,6 +156,9 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             int opcode_id = sass_to_id_map[instr->getSass()];
             std::vector<int> reg_num_list;
             std::vector<int> ureg_num_list;
+	    uint32_t pred_list = 0;
+	    uint32_t upred_list = 0;
+
 	    int32_t constant = 0;
 	    int32_t bankid, bankoffset;
 	    int width =  instr->getSize() / 4;
@@ -186,6 +189,10 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 		    bankid = op->u.cbank.id;
 		    bankoffset = op->u.cbank.imm_offset;
 		  }
+		} else if (op->type == InstrType::OperandType::PRED) {
+		  pred_list |= 1 << op->u.pred.num; // no implicit pred registers?
+		} else if(op->type == InstrType::OperandType::UPRED) {
+		  upred_list |= 1 << op->u.pred.num; // no implicit pred registers?
 		}
 		width = 1;
             }
@@ -204,6 +211,8 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                                            (uint64_t)&channel_dev);
 	    nvbit_add_call_arg_const_val32(instr, constant);
             /* how many register values are passed next */
+            nvbit_add_call_arg_const_val32(instr, pred_list);
+	    nvbit_add_call_arg_const_val32(instr, upred_list);
             nvbit_add_call_arg_const_val32(instr, (owidth << 8) | reg_num_list.size());
             nvbit_add_call_arg_const_val32(instr, ureg_num_list.size());
 
@@ -217,6 +226,13 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                  * the instrument function record_reg_val() */
                 nvbit_add_call_arg_ureg_val(instr, num, true);
             }
+
+	    if(pred_list)
+	      nvbit_add_call_arg_pred_reg(instr, true);
+
+	    if(upred_list)
+	      nvbit_add_call_arg_upred_reg(instr, true);
+
 	    if(constant) {
 	      if(constant == 1) {
 		nvbit_add_call_arg_cbank_val(instr, bankid, bankoffset, true);
@@ -379,6 +395,16 @@ void *recv_thread_fun(void *) {
                     fprintf(output_file,
                            "* UReg%d: 0x%08x\n", reg_idx, ri->ureg_vals[reg_idx]);
 		}
+
+		if(ri->pred_regs)
+                  if (output_file)
+                    fprintf(output_file,
+			    "* Pred: 0x%08x 0x%08x\n", ri->pred_regs, ri->pred_vals);
+
+		if(ri->upred_regs)
+                  if (output_file)
+                    fprintf(output_file,
+			    "* UPred: 0x%08x 0x%08x\n", ri->upred_regs, ri->upred_vals);
 
 		if(ri->constant) {
 		  if(ri->constant == 1) {
