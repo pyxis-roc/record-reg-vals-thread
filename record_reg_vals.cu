@@ -77,6 +77,8 @@ bool skip_callback_flag = false;
 /* global control variables for this tool */
 uint32_t instr_begin_interval = 0;
 uint32_t instr_end_interval = UINT32_MAX;
+uint32_t instr_ipoint_pre = 0;
+
 int verbose = 0;
 std::string output_filename;
 
@@ -96,6 +98,7 @@ void nvbit_at_init() {
         "End of the instruction interval where to apply instrumentation");
     GET_VAR_INT(verbose, "TOOL_VERBOSE", 0, "Enable verbosity inside the tool");
     GET_VAR_STR(output_filename, "TRACE_FILE", "Output trace to file");
+    GET_VAR_INT(instr_ipoint_pre, "INSTR_IPOINT_PRE", 0, "Instrument before instruction");
     std::string pad(100, '-');
     printf("%s\n", pad.c_str());
 
@@ -200,8 +203,10 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             }
             /* insert call to the instrumentation function with its
              * arguments */
-            /* note this won't record destination register */
-            nvbit_insert_call(instr, "record_reg_val_thread", IPOINT_AFTER);
+            if(instr_ipoint_pre)
+	      nvbit_insert_call(instr, "record_reg_val_thread", IPOINT_BEFORE);
+	    else
+	      nvbit_insert_call(instr, "record_reg_val_thread", IPOINT_AFTER);
             /* guard predicate value */
             nvbit_add_call_arg_guard_pred_val(instr);
             /* opcode id */
@@ -314,22 +319,24 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
 	      if(output_file)
                 fprintf(output_file, 
                     "Kernel %s - grid size %d,%d,%d - block size %d,%d,%d - nregs "
-                    "%d - shmem %d - cuda stream id %ld\n",
+                    "%d - shmem %d - cuda stream id %ld - ipoint_pre %d\n",
                     nvbit_get_func_name(ctx, func),
                     p->config->gridDimX, p->config->gridDimY,
                     p->config->gridDimZ, p->config->blockDimX,
                     p->config->blockDimY, p->config->blockDimZ, nregs,
                     shmem_static_nbytes + p->config->sharedMemBytes,
-                    (uint64_t)p->config->hStream);
+			(uint64_t)p->config->hStream,
+			instr_ipoint_pre);
             } else {
               cuLaunchKernel_params *p = (cuLaunchKernel_params *)params;
               if (output_file)
 		fprintf(output_file,
                     "Kernel %s - grid size %d,%d,%d - block size %d,%d,%d - nregs "
-                    "%d - shmem %d - cuda stream id %ld\n",
+                    "%d - shmem %d - cuda stream id %ld - ipoint_pre %d\n",
                     nvbit_get_func_name(ctx, func), p->gridDimX, p->gridDimY,
                     p->gridDimZ, p->blockDimX, p->blockDimY, p->blockDimZ, nregs,
-                    shmem_static_nbytes + p->sharedMemBytes, (uint64_t)p->hStream);
+			shmem_static_nbytes + p->sharedMemBytes, (uint64_t)p->hStream,
+			instr_ipoint_pre);
             }
         } else {
             /* make sure current kernel is completed */
