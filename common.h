@@ -31,6 +31,13 @@
 
 #include <stdint.h>
 
+typedef struct {
+  int32_t cta_x;
+  int32_t cta_y;
+  int32_t cta_z;
+  int32_t warp_id;
+} warp_selection_t;
+
 /* information collected in the instrumentation function and passed
  * on the channel from the GPU to the CPU */
 typedef struct {

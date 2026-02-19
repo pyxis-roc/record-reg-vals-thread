@@ -56,6 +56,7 @@
 #define CHANNEL_SIZE (1l << 20)
 static __managed__ ChannelDev channel_dev;
 static ChannelHost channel_host;
+__managed__ warp_selection_t wst;
 
 /* receiving thread and its control variables */
 pthread_t recv_thread;
@@ -81,10 +82,12 @@ uint32_t instr_ipoint_pre = 0;
 
 int verbose = 0;
 std::string output_filename;
-
+std::string warp_selection;
 /* opcode to id map and reverse map  */
 std::map<std::string, int> sass_to_id_map;
 std::map<int, std::string> id_to_sass_map;
+
+warp_selection_t wst_host;
 
 FILE *output_file = stdout;
 
@@ -99,6 +102,8 @@ void nvbit_at_init() {
     GET_VAR_INT(verbose, "TOOL_VERBOSE", 0, "Enable verbosity inside the tool");
     GET_VAR_STR(output_filename, "TRACE_FILE", "Output trace to file");
     GET_VAR_INT(instr_ipoint_pre, "INSTR_IPOINT_PRE", 0, "Instrument before instruction");
+    GET_VAR_STR(warp_selection, "INSTR_WARP", "Select warp as ctax,ctay,ctaz,warp_id")
+
     std::string pad(100, '-');
     printf("%s\n", pad.c_str());
 
@@ -112,6 +117,41 @@ void nvbit_at_init() {
       }
     }
 
+    if (warp_selection.size() == 0) {
+      wst_host.cta_x = 0;
+      wst_host.cta_y = 0;
+      wst_host.cta_z = 0;
+      wst_host.warp_id = 0;
+    }
+    else {
+      char *source = strdup(warp_selection.c_str());
+      if(!source) {
+	fprintf(stderr, "ERROR: Unable to allocate memory, ignoring warp selection.\n");
+	wst_host.cta_x = 0;
+	wst_host.cta_y = 0;
+	wst_host.cta_z = 0;
+	wst_host.warp_id = 0;
+      } else {
+	const char *parts[5];
+	char *saveptr;
+	int partcount = 0;
+
+	parts[0] = strtok_r(source, ",", &saveptr);
+	while(partcount < 5 && (parts[partcount++] != NULL)) {
+	  parts[partcount] = strtok_r(NULL, ",", &saveptr);
+	}
+	if(partcount == 5 && parts[4] == NULL) {
+	  wst_host.cta_x = atoi(parts[0]);
+	  wst_host.cta_y = atoi(parts[1]);
+	  wst_host.cta_z = atoi(parts[2]);
+	  wst_host.warp_id = atoi(parts[3]);
+	}
+	free(source);
+      }
+    }
+
+    fprintf(stderr, "Instrumenting warp: %d,%d,%d - %d\n",
+	    wst_host.cta_x, wst_host.cta_y, wst_host.cta_z, wst_host.warp_id);
 }
 /* Set used to avoid re-instrumenting the same functions multiple times */
 std::unordered_set<CUfunction> already_instrumented;
@@ -219,6 +259,10 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             /* add pointer to channel_dev*/
             nvbit_add_call_arg_const_val64(instr,
                                            (uint64_t)&channel_dev);
+            /* add pointer to selection*/
+            nvbit_add_call_arg_const_val64(instr,
+                                           (uint64_t)&wst);
+
 	    nvbit_add_call_arg_const_val32(instr, constant);
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, pred_list);
@@ -448,6 +492,11 @@ void nvbit_tool_init(CUcontext ctx) {
     recv_thread_done = RecvThreadState::WORKING;
     channel_host.init(0, CHANNEL_SIZE, &channel_dev, recv_thread_fun, NULL);
     nvbit_set_tool_pthread(channel_host.get_thread());
+
+    wst.cta_x = wst_host.cta_x;
+    wst.cta_y = wst_host.cta_y;
+    wst.cta_z = wst_host.cta_z;
+    wst.warp_id = wst_host.warp_id;
 }
 
 void nvbit_at_ctx_term(CUcontext ctx) {

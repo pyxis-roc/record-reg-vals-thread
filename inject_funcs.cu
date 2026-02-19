@@ -42,9 +42,17 @@
 /* contains definition of the mem_access_t structure */
 #include "common.h"
 
+__device__ bool warp_selected(uint64_t pselected, uint32_t cta_x, uint32_t cta_y, uint32_t cta_z, uint32_t warp_id) {
+  warp_selection_t *wst = (warp_selection_t *) pselected;
+
+  return wst->cta_x == cta_x && wst->cta_y == cta_y && wst->cta_z == cta_z && wst->warp_id == warp_id;
+}
+
+
 extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opcode_id,
                                                               int opcode_idx,
                                                               uint64_t pchannel_dev,
+							      uint64_t pselected,
 							      int32_t constant,
 							      int32_t pred_regs,
 							      int32_t upred_regs,
@@ -61,14 +69,15 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
     reg_info_t ri;
 
     int4 cta = get_ctaid();
-    if(!(cta.x == 0 && cta.y == 0 && cta.z == 0))
+    int warp_id = get_warpid();
+
+    if(!warp_selected(pselected, cta.x, cta.y, cta.z, warp_id))
       return;
     ri.cta_id_x = cta.x;
     ri.cta_id_y = cta.y;
     ri.cta_id_z = cta.z;
-    ri.warp_id = get_warpid();
-    if(ri.warp_id != 0)
-      return;
+    ri.warp_id = warp_id;
+
     ri.opcode_idx = opcode_idx;
     ri.opcode_id = opcode_id;
     ri.num_regs = num_regs;
