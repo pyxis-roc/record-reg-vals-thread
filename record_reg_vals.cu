@@ -171,6 +171,9 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 	      width = 2;
 	    else if(strncmp("HMMA.16816.F32", instr->getOpcode(), 14) == 0)
 	      width = 4;
+	    else if(strncmp("LDG.E.LTC128B.CONSTANT", instr->getOpcode(), 22) == 0)
+	      width = 4;
+
 	    owidth = width;
 
             /* iterate on the operands */
