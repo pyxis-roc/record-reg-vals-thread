@@ -48,6 +48,7 @@ def main():
     p.add_argument("--warp", help="Warp to trace", default=DEFAULT_WARP)
     p.add_argument("--sopath", help="Path to record_reg_vals_thread.so", default=None, type=Path)
     p.add_argument("--use-ld-preload", help="Use LD_PRELOAD instead of CUDA_INJECTION64_PATH", action="store_true")
+    p.add_argument("--no-compress", help="Do not compress trace file", action="store_true")
 
     args, cmdline = p.parse_known_args()
 
@@ -87,6 +88,18 @@ def main():
     except subprocess.CalledProcessError as e:
         print(e)
         sys.exit(1)
+
+    if args.trace:
+        tracefile = Path(args.trace)
+        if not tracefile.exists():
+            print(f"ERROR: {tracefile} not found. NVBit may not have run.")
+            sys.exit(1)
+
+        if not args.no_compress:
+            subprocess.run(['bzip2', '-f', str(tracefile)])
+            print(f"Compressed {tracefile} to {tracefile}.bz2")
+        else:
+            print(f"Wrote trace to {tracefile}")
 
 if __name__ == '__main__':
     main()
