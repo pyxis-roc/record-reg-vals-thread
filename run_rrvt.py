@@ -80,7 +80,7 @@ def main():
         runenv = dict(os.environ)
         runenv.update(env)
 
-        subprocess.run(cmdline, env=env, check=True)
+        subprocess.run(cmdline, env=runenv, check=True)
     except FileNotFoundError as e:
         print(e)
         sys.exit(1)
