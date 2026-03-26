@@ -196,6 +196,10 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                 id_to_sass_map[opcode_id] = std::string(instr->getSass());
             }
 
+	    /* skip */
+	    if(strncmp("STG.E", instr->getOpcode(), 5) == 0)
+	      continue;
+
             int opcode_id = sass_to_id_map[instr->getSass()];
             std::vector<int> reg_num_list;
             std::vector<int> ureg_num_list;
