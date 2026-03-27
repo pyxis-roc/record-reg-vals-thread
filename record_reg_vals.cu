@@ -83,6 +83,7 @@ uint32_t instr_ipoint_pre = 0;
 int verbose = 0;
 std::string output_filename;
 std::string warp_selection;
+std::string kernel_name;
 /* opcode to id map and reverse map  */
 std::map<std::string, int> sass_to_id_map;
 std::map<int, std::string> id_to_sass_map;
@@ -104,6 +105,7 @@ void nvbit_at_init() {
         "End of the instruction interval where to apply instrumentation");
     GET_VAR_INT(kernel_begin, "KERNEL_BEGIN", 0, "Instrument starting from this kernel");
     GET_VAR_INT(kernel_end, "KERNEL_END", UINT32_MAX, "Instrument up to (but excluding) this kernel launch");
+    GET_VAR_STR(kernel_name, "KERNEL_NAME", "Instrument only this kernel, must be a mangled name");
     GET_VAR_INT(verbose, "TOOL_VERBOSE", 0, "Enable verbosity inside the tool");
     GET_VAR_STR(output_filename, "TRACE_FILE", "Output trace to file");
     GET_VAR_INT(instr_ipoint_pre, "INSTR_IPOINT_PRE", 0, "Instrument before instruction");
@@ -162,15 +164,22 @@ void nvbit_at_init() {
 std::unordered_set<CUfunction> already_instrumented;
 static uint32_t kernel_count = 0;
 void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
-    /* Get related functions of the kernel (device function that can be
-     * called by the kernel) */
-    std::vector<CUfunction> related_functions =
-        nvbit_get_related_functions(ctx, func);
 
     kernel_count++;
 
     if(kernel_count < kernel_begin || kernel_count >= kernel_end) {
       return;
+    }
+
+    /* Get related functions of the kernel (device function that can be
+     * called by the kernel) */
+    std::vector<CUfunction> related_functions =
+        nvbit_get_related_functions(ctx, func);
+
+    if(!kernel_name.empty()) {
+      const std::string fname{nvbit_get_func_name(ctx, func, true)};
+      if(fname.compare(kernel_name) != 0)
+	return;
     }
 
     /* add kernel itself to the related function vector */

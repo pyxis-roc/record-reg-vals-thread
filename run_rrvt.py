@@ -66,6 +66,7 @@ def main():
     p.add_argument("--use-ld-preload", help="Use LD_PRELOAD instead of CUDA_INJECTION64_PATH", action="store_true")
     p.add_argument("--no-compress", help="Do not compress trace file", action="store_true")
     p.add_argument("--kernel-range", help="Instrument a range of kernels", metavar="START,END")
+    p.add_argument("--name", help="Instrument this kernel by mangled name")
     p.add_argument("--range", help="Instrument a range of instructions", metavar="START,END")
     p.add_argument("--verbose", help="Set TOOL_VERBOSE", action="store_true")
     p.add_argument("-n", dest="dry_run", help="Dry-run", action="store_true")
@@ -107,6 +108,9 @@ def main():
         st, end = parse_range(args.kernel_range, "--kernel-range")
         env['KERNEL_BEGIN'] = st
         env['KERNEL_END'] = end
+
+    if args.name:
+        env['KERNEL_NAME'] = args.name
 
     print(" ".join([f"%s=%s" % (k, v) for k, v in env.items()]), shlex.join(cmdline))
 
