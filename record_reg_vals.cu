@@ -87,6 +87,9 @@ std::string warp_selection;
 std::map<std::string, int> sass_to_id_map;
 std::map<int, std::string> id_to_sass_map;
 
+uint32_t kernel_begin = 0;
+uint32_t kernel_end = UINT32_MAX;
+
 warp_selection_t wst_host;
 
 FILE *output_file = stdout;
@@ -99,6 +102,8 @@ void nvbit_at_init() {
     GET_VAR_INT(
         instr_end_interval, "INSTR_END", UINT32_MAX,
         "End of the instruction interval where to apply instrumentation");
+    GET_VAR_INT(kernel_begin, "KERNEL_BEGIN", 0, "Instrument starting from this kernel");
+    GET_VAR_INT(kernel_end, "KERNEL_END", UINT32_MAX, "Instrument up to (but excluding) this kernel launch");
     GET_VAR_INT(verbose, "TOOL_VERBOSE", 0, "Enable verbosity inside the tool");
     GET_VAR_STR(output_filename, "TRACE_FILE", "Output trace to file");
     GET_VAR_INT(instr_ipoint_pre, "INSTR_IPOINT_PRE", 0, "Instrument before instruction");
@@ -155,12 +160,18 @@ void nvbit_at_init() {
 }
 /* Set used to avoid re-instrumenting the same functions multiple times */
 std::unordered_set<CUfunction> already_instrumented;
-
+static uint32_t kernel_count = 0;
 void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
     /* Get related functions of the kernel (device function that can be
      * called by the kernel) */
     std::vector<CUfunction> related_functions =
         nvbit_get_related_functions(ctx, func);
+
+    kernel_count++;
+
+    if(kernel_count < kernel_begin || kernel_count >= kernel_end) {
+      return;
+    }
 
     /* add kernel itself to the related function vector */
     related_functions.push_back(func);
@@ -172,10 +183,12 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
         if (!already_instrumented.insert(f).second) {
             continue;
         }
+
         const std::vector<Instr *> &instrs = nvbit_get_instrs(ctx, f);
+
         if (verbose) {
-            printf("Inspecting function %s at address 0x%lx\n",
-                   nvbit_get_func_name(ctx, f), nvbit_get_func_addr(ctx, f));
+            printf("Kernel #%d: Inspecting function %s at address 0x%lx\n",
+                   kernel_count, nvbit_get_func_name(ctx, f), nvbit_get_func_addr(ctx, f));
         }
 
         uint32_t cnt = 0;
@@ -195,10 +208,6 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                 sass_to_id_map[instr->getSass()] = opcode_id;
                 id_to_sass_map[opcode_id] = std::string(instr->getSass());
             }
-
-	    /* skip */
-	    if(strncmp("STG.E", instr->getOpcode(), 5) == 0)
-	      continue;
 
             int opcode_id = sass_to_id_map[instr->getSass()];
             std::vector<int> reg_num_list;
@@ -368,9 +377,9 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                 cbid == API_CUDA_cuLaunchKernelEx) {
               cuLaunchKernelEx_params *p = (cuLaunchKernelEx_params *)params;
 	      if(output_file)
-                fprintf(output_file, 
-                    "Kernel %s - grid size %d,%d,%d - block size %d,%d,%d - nregs "
-                    "%d - shmem %d - cuda stream id %ld - ipoint_pre %d\n",
+                fprintf(output_file,
+                    "Kernel %d:%s - grid size %d,%d,%d - block size %d,%d,%d - nregs "
+                    "%d - shmem %d - cuda stream id %ld - ipoint_pre %d\n", kernel_count,
                     nvbit_get_func_name(ctx, func),
                     p->config->gridDimX, p->config->gridDimY,
                     p->config->gridDimZ, p->config->blockDimX,
@@ -382,8 +391,8 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
               cuLaunchKernel_params *p = (cuLaunchKernel_params *)params;
               if (output_file)
 		fprintf(output_file,
-                    "Kernel %s - grid size %d,%d,%d - block size %d,%d,%d - nregs "
-                    "%d - shmem %d - cuda stream id %ld - ipoint_pre %d\n",
+                    "Kernel %d:%s - grid size %d,%d,%d - block size %d,%d,%d - nregs "
+		     "%d - shmem %d - cuda stream id %ld - ipoint_pre %d\n", kernel_count,
                     nvbit_get_func_name(ctx, func), p->gridDimX, p->gridDimY,
                     p->gridDimZ, p->blockDimX, p->blockDimY, p->blockDimZ, nregs,
 			shmem_static_nbytes + p->sharedMemBytes, (uint64_t)p->hStream,
