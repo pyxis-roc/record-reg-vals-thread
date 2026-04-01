@@ -55,7 +55,7 @@ typedef struct {
     /* 32 lanes, each thread can store up to 5 register values */
     uint32_t reg_vals[32][8];
     uint32_t ureg_vals[5];
-    uint32_t pred_vals;
+    uint32_t pred_vals[5];
     uint32_t upred_vals;
     union {
       uint32_t constant32;

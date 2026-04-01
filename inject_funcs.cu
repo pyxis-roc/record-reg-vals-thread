@@ -86,11 +86,11 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
     ri.upred_regs = upred_regs;
     ri.constant = constant;
 
-    if ((num_regs & 0xff) || unum_regs || (constant != 0)) {
+    if ((num_regs & 0xff) || unum_regs || pred_regs || (constant != 0)) {
         va_list vl;
         va_start(vl, unum_regs);
 
-        for (int i = 0; i < (num_regs & 0xff); i++) {
+        for (int i = 0; i < (num_regs & 0xff) && i < 8; i++) {
             uint32_t val = va_arg(vl, uint32_t);
 
             /* collect register values from other threads */
@@ -99,15 +99,26 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
             }
         }
 
+        if(pred_regs) {
+          uint32_t pred_vals = va_arg(vl, uint32_t);
+          uint32_t mask = pred_regs;
+          int i = 0;
+          while(mask > 0 && i < 5) {
+            uint32_t pos = __ffs(mask);
+            uint32_t val = (pred_vals & (1 << (pos - 1))) > 0;
+            uint32_t result = __ballot_sync(active_mask, val);
+            if(first_laneid == laneid) ri.pred_vals[i++] = result;
+            mask = mask & ~(1 << (pos - 1));
+          }
+        }
+
 	if(first_laneid == laneid) {
-	  for (int i = 0; i < unum_regs; i++) {
+	  for (int i = 0; i < unum_regs && i < 5; i++) {
             uint32_t val = va_arg(vl, uint32_t);
 
 	    ri.ureg_vals[i] = val;
 	  }
 
-	  if(pred_regs)
-	    ri.pred_vals = va_arg(vl, uint32_t);
 
 	  if(upred_regs)
 	    ri.upred_vals = va_arg(vl, uint32_t);

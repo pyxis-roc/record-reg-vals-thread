@@ -260,9 +260,11 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 		    bankoffset = op->u.cbank.imm_offset;
 		  }
 		} else if (op->type == InstrType::OperandType::PRED) {
-		  pred_list |= 1 << op->u.pred.num; // no implicit pred registers?
+                  if(op->u.pred.num != InstrType::PT && op->u.pred.num != InstrType::PR)  // can't do PR in current schema
+                    pred_list |= 1 << op->u.pred.num; // no implicit pred registers?
 		} else if(op->type == InstrType::OperandType::UPRED) {
-		  upred_list |= 1 << op->u.pred.num; // no implicit pred registers?
+                  if(op->u.pred.num != InstrType::UPT && op->u.pred.num != InstrType::UPR) // can't do UPR in current schema
+                    upred_list |= 1 << op->u.pred.num; // no implicit pred registers?
 		}
 		width = 1;
             }
@@ -475,9 +477,16 @@ void *recv_thread_fun(void *) {
 		}
 
 		if(ri->pred_regs)
-                  if (output_file)
-                    fprintf(output_file,
-			    "* Pred: 0x%08x 0x%08x\n", ri->pred_regs, ri->pred_vals);
+                  if (output_file) {
+                    int count = __builtin_popcount(ri->pred_regs);
+                    uint32_t regs = ri->pred_regs;
+                    for(int i = 0; i < count; i++) {
+                      uint32_t regndx = __builtin_ffs(regs);
+                      fprintf(output_file,
+                              "* Pred%d: 0x%08x\n", regndx - 1, ri->pred_vals[i]);
+                      regs = regs & ~(1 << (regndx - 1));
+                    }
+                  }
 
 		if(ri->upred_regs)
                   if (output_file)
