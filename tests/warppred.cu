@@ -1,3 +1,4 @@
+/* -*- mode: c++ -*- */
 #include <cuda.h>
 #include <cassert>
 #include <cstdio>
