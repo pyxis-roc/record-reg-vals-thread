@@ -41,6 +41,7 @@
 
 /* contains definition of the mem_access_t structure */
 #include "common.h"
+#include "instr_types.h"
 
 __device__ bool warp_selected(uint64_t pselected, uint32_t cta_x, uint32_t cta_y, uint32_t cta_z, uint32_t warp_id) {
   warp_selection_t *wst = (warp_selection_t *) pselected;
@@ -101,7 +102,8 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
 
         if(pred_regs) {
           uint32_t pred_vals = va_arg(vl, uint32_t);
-          uint32_t mask = pred_regs;
+
+          uint32_t mask = pred_regs & ~(1 << InstrType::PR);
           int i = 0;
           while(mask > 0 && i < 5) {
             uint32_t pos = __ffs(mask);
@@ -109,6 +111,15 @@ extern "C" __device__ __noinline__ void record_reg_val_thread(int pred, int opco
             uint32_t result = __ballot_sync(active_mask, val);
             if(first_laneid == laneid) ri.pred_vals[i++] = result;
             mask = mask & ~(1 << (pos - 1));
+          }
+
+          if(pred_regs & (1 << InstrType::PR)) {
+            if((num_regs & 0xff) < 7) {
+              uint32_t index = (num_regs & 0xff) + 1;
+              for (int tid = 0; tid < 32; tid++) {
+                ri.reg_vals[tid][index] = __shfl_sync(active_mask, pred_vals, tid);
+              }
+            }
           }
         }
 

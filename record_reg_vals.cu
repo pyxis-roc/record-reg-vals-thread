@@ -260,10 +260,10 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 		    bankoffset = op->u.cbank.imm_offset;
 		  }
 		} else if (op->type == InstrType::OperandType::PRED) {
-                  if(op->u.pred.num != InstrType::PT && op->u.pred.num != InstrType::PR)  // can't do PR in current schema
+                  if(op->u.pred.num != InstrType::PT)
                     pred_list |= 1 << op->u.pred.num; // no implicit pred registers?
 		} else if(op->type == InstrType::OperandType::UPRED) {
-                  if(op->u.pred.num != InstrType::UPT && op->u.pred.num != InstrType::UPR) // can't do UPR in current schema
+                  if(op->u.pred.num != InstrType::UPT)
                     upred_list |= 1 << op->u.pred.num; // no implicit pred registers?
 		}
 		width = 1;
@@ -470,16 +470,37 @@ void *recv_thread_fun(void *) {
                       fprintf(output_file, "* %s\n", output);
                 }
 
+                if(ri->pred_regs & (1 << InstrType::PR)) {
+                  if((ri->num_regs & 0xff) < 7) {
+                    uint32_t reg_idx = (ri->num_regs & 0xff) + 1;
+
+                    char *start = output;
+                    size_t sz = 1024;
+                    int wr = 0;
+                    for (int i = 0; i < 32; i++) {
+                      wr = snprintf(start, sz, "PR_T%d: 0x%08x ", i,
+                                    ri->reg_vals[i][reg_idx]);
+                      if (wr >= sz)
+                        break; // TRUNCATED
+                      sz -= wr;
+		      start += wr;
+                    }
+
+                    if (output_file)
+                      fprintf(output_file, "* %s\n", output);
+                  }
+                }
+
                 for (int reg_idx = 0; reg_idx < ri->unum_regs; reg_idx++) {
                   if (output_file)
                     fprintf(output_file,
                            "* UReg%d: 0x%08x\n", reg_idx, ri->ureg_vals[reg_idx]);
 		}
 
-		if(ri->pred_regs)
+		if(ri->pred_regs & ~(1 << InstrType::PR))
                   if (output_file) {
-                    int count = __builtin_popcount(ri->pred_regs);
-                    uint32_t regs = ri->pred_regs;
+                    uint32_t regs = ri->pred_regs & ~(1 << InstrType::PR);
+                    int count = __builtin_popcount(regs);
                     for(int i = 0; i < count; i++) {
                       uint32_t regndx = __builtin_ffs(regs);
                       fprintf(output_file,
