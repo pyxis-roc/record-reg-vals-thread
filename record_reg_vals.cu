@@ -235,6 +235,8 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 	      width = 4;
 	    else if(strncmp("LDG.E.LTC128B.CONSTANT", instr->getOpcode(), 22) == 0)
 	      width = 4;
+	    else if(strncmp("UIMAD.WIDE", instr->getOpcode(), 10) == 0)
+	      width = 2;
 
 	    owidth = width;
 
